@@ -1,0 +1,6 @@
+key
+*.pyc
+.~lock.*
+*.docx
+*.dta
+*.data
