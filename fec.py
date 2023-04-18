@@ -3,11 +3,41 @@ import argparse
 import os
 import json
 import pandas
+from time import sleep
 from pandas import json_normalize
+from tqdm import tqdm
+
 
 # API url for schedule A receipts, including contributions from individuals
 api_url = "https://api.open.fec.gov/v1/schedules/schedule_a/"
 
+
+def make_request(url, max_tries = 5, sleep_time = 1):
+    """Make a request to a URL, checking for HTTP error codes and retrying if the request fails.
+    Args:
+        url (str) : The URL to request.
+        max_tries (int): The maximum number of times to attempt the request (default: 3).
+        sleep_time (int): The time to wait (in seconds) between retries (default: 1).
+    
+    Returns:
+        The response object if the request is successful. Otherwise raises the last exception.
+    """
+    attempt = 0
+    while attempt < max_tries:
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error ({e.response.status_code}): {e.response.reason}")
+            if attempt == max_tries - 1:
+                raise e
+        except requests.exceptions.RequestException as e:
+            print(f"Request Error: {e}")
+            if attempt == max_tries - 1:
+                raise e
+        attempt += 1
+        sleep(sleep_time)
 
 def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
     """Fetches all Schedule A filings of campaign contributions and loans for the given two-year periods.
@@ -45,7 +75,10 @@ def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
         else:
             page = 0
             pagination = {"pages": 1, "last_indexes": {}}
-        while page < pagination["pages"]:
+        
+        with tqdm(total=pagination['pages'], desc=f"Downloading years {year-2} to {year}",  miniters=1) as pbar:
+          pbar.update(page)
+          while page < pagination["pages"]:
             pagination_string = "?"+"&".join([key+"="+str(value) for key,value in pagination["last_indexes"].items()])
 
             response = requests.get(api_url+pagination_string, params=parameters)
@@ -62,7 +95,8 @@ def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
                 with open(checkpoint_filename, 'w') as checkpoint_file:
                     json.dump(checkpoint, checkpoint_file)
 
-            print(f"{page} / {pagination['pages']}")
+            pbar.total = pagination['pages']
+            pbar.update(1)
 
     return entries
     
@@ -109,6 +143,6 @@ if __name__ == "__main__":
     start = int(args.start)
     end = int(args.end)
 
-    data = download_scheduleA_year_range(2022, 2024, args.api_key)
+    data = fec_scheduleA_year_range(start, end, args.api_key)
     data.to_csv(args.output)
 
