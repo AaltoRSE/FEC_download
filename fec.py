@@ -3,16 +3,19 @@ import argparse
 import os
 import json
 import pandas
+import time
 from time import sleep
 from pandas import json_normalize
 from tqdm import tqdm
 
-
 # API url for schedule A receipts, including contributions from individuals
 api_url = "https://api.open.fec.gov/v1/schedules/schedule_a/"
 
+rate_limit = 1000 # per hour
+start_time = time.time()
+request_count = 0
 
-def make_request(url, params, max_tries = 5, sleep_time = 1):
+def make_request(url, params, max_tries = 20, sleep_time = 1):
     """Make a request to a URL, checking for HTTP error codes and retrying if the request fails.
     Args:
         url (str) : The URL to request.
@@ -22,15 +25,21 @@ def make_request(url, params, max_tries = 5, sleep_time = 1):
     Returns:
         The response object if the request is successful. Otherwise raises the last exception.
     """
+    global request_count
     attempt = 0
     while attempt < max_tries:
+        elapsed_time = time.time() - start_time
+        rate = (request_count / elapsed_time) * 3600
+        if rate > rate_limit:
+            sleep(3600/1000+1)
         try:
+            request_count += 1
             response = requests.get(url, params=params)
             response.raise_for_status()
             return response
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 429:
-                # rate limit hit. Wait for a moment
+                # rate limit hit. Wait for a moment longer
                 sleep(10)
             print(f"HTTP error ({e.response.status_code}): {e.response.reason}")
             if attempt == max_tries - 1:
