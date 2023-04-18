@@ -12,7 +12,7 @@ from tqdm import tqdm
 api_url = "https://api.open.fec.gov/v1/schedules/schedule_a/"
 
 
-def make_request(url, max_tries = 5, sleep_time = 1):
+def make_request(url, params, max_tries = 5, sleep_time = 1):
     """Make a request to a URL, checking for HTTP error codes and retrying if the request fails.
     Args:
         url (str) : The URL to request.
@@ -25,7 +25,7 @@ def make_request(url, max_tries = 5, sleep_time = 1):
     attempt = 0
     while attempt < max_tries:
         try:
-            response = requests.get(url)
+            response = requests.get(url, params=params)
             response.raise_for_status()
             return response
         except requests.exceptions.HTTPError as e:
@@ -62,7 +62,8 @@ def checkpoint_read(year, employer):
             entries = checkpoint["entries"]
             pagination = checkpoint["pagination"]
             return page, entries, pagination
-    
+    except:
+        pass
     page = 0
     entries = []
     pagination = {"pages": 1, "last_indexes": {}}
@@ -77,7 +78,7 @@ def download_pages(parameters):
         for key, value in pagination["last_indexes"].items():
             parameters[key] = value
 
-        response = requests.get(api_url, params=parameters)
+        response = make_request(api_url, params=parameters)
         response = response.json()
         results = response["results"]
 
@@ -101,7 +102,7 @@ def download_pages_tqdm(parameters):
             for key, value in pagination["last_indexes"].items():
                 parameters[key] = value
 
-            response = requests.get(api_url, params=parameters)
+            response = make_request(api_url, params=parameters)
             response = response.json()
             results = response["results"]
 
