@@ -1,5 +1,7 @@
 import requests
 import argparse
+import os
+import json
 import pandas
 from pandas import json_normalize
 
@@ -32,10 +34,19 @@ def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
     entries = []
     pagination_string = ""
     for year in range(start, end, 2):
-        page = 0
-        pagination = {"pages": 1}
+        parameters["two_year_transaction_period"] = year
+        checkpoint_filename = f"fec_download_checkpoint_{year}.json"
+        if os.path.exists(checkpoint_filename):
+            with open(checkpoint_filename, 'r') as f:
+                checkpoint = json.load(f)
+            page = checkpoint["page"]
+            entries = checkpoint["entries"]
+            pagination = checkpoint["pagination"]
+        else:
+            page = 0
+            pagination = {"pages": 1, "last_indexes": {}}
         while page < pagination["pages"]:
-            parameters["two_year_transaction_period"] = year
+            pagination_string = "?"+"&".join([key+"="+str(value) for key,value in pagination["last_indexes"].items()])
 
             response = requests.get(api_url+pagination_string, params=parameters)
             response = response.json()
@@ -44,11 +55,13 @@ def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
             entries += results
 
             pagination = response["pagination"]
-            pagination_string = "?"+"&".join([key+"="+str(value) for key,value in pagination["last_indexes"].items()])
             page += 1
-            print(pagination)
-            print(page, pagination["pages"])
-            
+
+            checkpoint = {"pagination": pagination, "entries": entries, "page": page}
+            with open(checkpoint_filename, 'w') as checkpoint_file:
+                json.dump(checkpoint, checkpoint_file)
+
+            print(f"{page} / {pagination['pages']}")
 
     return entries
     
