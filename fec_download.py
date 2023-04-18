@@ -108,7 +108,10 @@ def download_pages(parameters):
 
 def download_pages_tqdm(parameters):
     year = parameters["two_year_transaction_period"]
-    employer = parameters["contributor_employer"]
+    if "contributor_employer" in parameters:
+        employer = parameters["contributor_employer"]
+    else:
+        employer = None
     page, entries_year, pagination = checkpoint_read(year, employer)
 
     with tqdm(total=pagination['pages'], desc=f"Downloading years {year-2} to {year}",  miniters=1) as pbar:
@@ -201,7 +204,7 @@ def filter_contributions(df):
     return contributions_df
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Fetch data from FEC API")
     parser.add_argument("-k", "--api_key", metavar="", default="DEMO_KEY", help="your FEC API key, default: DEMO_KEY")
     parser.add_argument("-s", "--start", metavar="", default=1990, help="The first year for which data is requested. The data is returned in 2 year chunks and earlier data may be returned.")
@@ -225,3 +228,6 @@ if __name__ == "__main__":
     data = fec_scheduleA_year_range(start, end, args.api_key, args.employer)
     data.to_csv(args.output)
 
+
+if __name__ == "__main__":
+    main()
