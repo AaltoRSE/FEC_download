@@ -29,6 +29,9 @@ def make_request(url, params, max_tries = 5, sleep_time = 1):
             response.raise_for_status()
             return response
         except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                # rate limit hit. Wait for a moment
+                sleep(10)
             print(f"HTTP error ({e.response.status_code}): {e.response.reason}")
             if attempt == max_tries - 1:
                 raise e
@@ -86,8 +89,7 @@ def download_pages(parameters):
 
         pagination = response["pagination"]
         if pagination["last_indexes"] is None:
-            # This seems to happend but is not documented behaviour. There is no way
-            # of getting the next page, so my assumption is that this is the last page.
+            print(f"Warning: pagination data for {employer} for years {year-2} to {year} is None. Successfully downloaded {len(entries_year)} entries.")
             break
         page += 1
 
