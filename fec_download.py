@@ -161,7 +161,8 @@ def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = N
             "page": "1",
             "sort_null_only": "false",
             "api_key": api_key,
-            "page": 0
+            "page": 0,
+            #"line_number": "F3X-11AI"
         }
         if employer is not None:
             parameters["contributor_employer"] = employer
@@ -188,20 +189,6 @@ def fec_scheduleA_year_range(start, end, key = "DEMO_KEY", employer=None):
     entries = download_scheduleA_year_range(start, end, key, employer)
     df = pandas.DataFrame(json_normalize(entries))
     return df
-
-
-def filter_contributions(df):
-    """Filters a DataFrame of Schedule A filings to retain only contribution items.
-
-    Args:
-        df (pandas.DataFrame): A DataFrame of Schedule A filings.
-
-    Returns:
-        pandas.DataFrame: A new DataFrame containing only contribution items.
-    """
-    contribution_lines = ["11AI", "11AII", "11BI", "11BII"]
-    contributions_df = df[df["line_number"].isin(contribution_lines)].copy()
-    return contributions_df
 
 
 def main():
