@@ -158,7 +158,6 @@ def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = N
             "page": "1",
             "sort_null_only": "false",
             "api_key": api_key,
-            "is_individual": "true",
             "page": 0
         }
         if employer is not None:
