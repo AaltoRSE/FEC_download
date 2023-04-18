@@ -39,68 +39,124 @@ def make_request(url, max_tries = 5, sleep_time = 1):
         attempt += 1
         sleep(sleep_time)
 
-def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
+def checkpoint_filename(year, employer):
+    if not os.path.exists("checkpoints"):
+        os.makedirs("checkpoints")
+    if employer is not None:
+        return f"checkpoints/fec_download_checkpoint_{year}_{employer}.json"
+    else: 
+        return f"checkpoints/fec_download_checkpoint_{year}.json"
+
+def checkpoint_dump(pagination, entries, page, year, employer):
+    checkpoint = {"pagination": pagination, "entries": entries, "page": page}
+    with open(checkpoint_filename(year, employer), 'w') as checkpoint_file:
+        json.dump(checkpoint, checkpoint_file)
+
+def checkpoint_read(year, employer):
+    filename = checkpoint_filename(year, employer)
+    try:
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
+                checkpoint = json.load(f)
+            page = checkpoint["page"]
+            entries = checkpoint["entries"]
+            pagination = checkpoint["pagination"]
+            return page, entries, pagination
+    
+    page = 0
+    entries = []
+    pagination = {"pages": 1, "last_indexes": {}}
+    return page, entries, pagination
+
+def download_pages(parameters):
+    year = parameters["two_year_transaction_period"]
+    employer = parameters["contributor_employer"]
+    page, entries_year, pagination = checkpoint_read(year, employer)
+
+    while page < pagination["pages"]:
+        for key, value in pagination["last_indexes"].items():
+            parameters[key] = value
+
+        response = requests.get(api_url, params=parameters)
+        response = response.json()
+        results = response["results"]
+
+        entries_year += results
+
+        pagination = response["pagination"]
+        page += 1
+
+        if page % 10 == 0:
+            checkpoint_dump(pagination, entries_year, page, year, employer)
+    return entries_year
+
+def download_pages_tqdm(parameters):
+    year = parameters["two_year_transaction_period"]
+    employer = parameters["contributor_employer"]
+    page, entries_year, pagination = checkpoint_read(year, employer)
+
+    with tqdm(total=pagination['pages'], desc=f"Downloading years {year-2} to {year}",  miniters=1) as pbar:
+          pbar.update(page)
+          while page < pagination["pages"]:
+            for key, value in pagination["last_indexes"].items():
+                parameters[key] = value
+
+            response = requests.get(api_url, params=parameters)
+            response = response.json()
+            results = response["results"]
+
+            entries_year += results
+
+            pagination = response["pagination"]
+            page += 1
+
+            if page % 10 == 0:
+                checkpoint_dump(pagination, entries_year, page, year, employer)
+
+            pbar.total = pagination['pages']
+            pbar.update(1)
+    return entries_year
+
+
+def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = None):
     """Fetches all Schedule A filings of campaign contributions and loans for the given two-year periods.
 
     Args:
         start (int): starting year of two-year periods
         end (int): ending year of two-year periods
-        key (str): API key for accessing the FEC API (default: "DEMO_KEY")
+        api_key (str): API key for accessing the FEC API (default: "DEMO_KEY")
 
     Returns:
         list: A list of contribution and loan items from FEC API.
     """
     start = (start//2+1)*2
     end = (end//2+2)*2
-    parameters = {
-        "sort_hide_null": "false",
-        "per_page": "100",
-        "sort_nulls_last": "false",
-        "sort": "-contribution_receipt_date",
-        "page": "1",
-        "sort_null_only": "false",
-        "api_key": key
-    }
     entries = []
-    pagination_string = ""
+
     for year in range(start, end, 2):
+        parameters = {
+            "sort_hide_null": "false",
+            "per_page": "100",
+            "sort_nulls_last": "false",
+            "sort": "-contribution_receipt_date",
+            "page": "1",
+            "sort_null_only": "false",
+            "api_key": api_key,
+            "is_individual": "true",
+            "page": 0
+        }
+        if employer is not None:
+            parameters["contributor_employer"] = employer
         parameters["two_year_transaction_period"] = year
-        checkpoint_filename = f"fec_download_checkpoint_{year}.json"
-        if os.path.exists(checkpoint_filename):
-            with open(checkpoint_filename, 'r') as f:
-                checkpoint = json.load(f)
-            page = checkpoint["page"]
-            entries = checkpoint["entries"]
-            pagination = checkpoint["pagination"]
+
+        if employer is not None:
+            entries += download_pages(parameters)
         else:
-            page = 0
-            pagination = {"pages": 1, "last_indexes": {}}
-        
-        with tqdm(total=pagination['pages'], desc=f"Downloading years {year-2} to {year}",  miniters=1) as pbar:
-          pbar.update(page)
-          while page < pagination["pages"]:
-            pagination_string = "?"+"&".join([key+"="+str(value) for key,value in pagination["last_indexes"].items()])
-
-            response = requests.get(api_url+pagination_string, params=parameters)
-            response = response.json()
-            results = response["results"]
-
-            entries += results
-
-            pagination = response["pagination"]
-            page += 1
-
-            if page % 10 == 0:
-                checkpoint = {"pagination": pagination, "entries": entries, "page": page}
-                with open(checkpoint_filename, 'w') as checkpoint_file:
-                    json.dump(checkpoint, checkpoint_file)
-
-            pbar.total = pagination['pages']
-            pbar.update(1)
+            entries += download_pages_tqdm(parameters)
 
     return entries
     
-def fec_scheduleA_year_range(start, end, key = "DEMO_KEY"):
+def fec_scheduleA_year_range(start, end, key = "DEMO_KEY", employer=None):
     """Returns a panda DataFrame with campaign contributions and loans by cycle.
 
     Args:
@@ -111,9 +167,10 @@ def fec_scheduleA_year_range(start, end, key = "DEMO_KEY"):
     Returns:
         pandas.DataFrame: A DataFrame of contribution and loan items by cycle.
     """
-    entries = download_scheduleA_year_range(start, end, key)
+    entries = download_scheduleA_year_range(start, end, key, employer)
     df = pandas.DataFrame(json_normalize(entries))
     return df
+
 
 def filter_contributions(df):
     """Filters a DataFrame of Schedule A filings to retain only contribution items.
@@ -134,7 +191,8 @@ if __name__ == "__main__":
     parser.add_argument("-k", "--api_key", metavar="", default="DEMO_KEY", help="your FEC API key, default: DEMO_KEY")
     parser.add_argument("-s", "--start", metavar="", default=1990, help="The first year for which data is requested. The data is returned in 2 year chunks and earlier data may be returned.")
     parser.add_argument("-e", "--end", metavar="", default=2025, help="The last year for which data is requested. The data is returned in 2 year chunks and later data may be returned.")
-    parser.add_argument("-o", "--output", metavar="", default="fec_scheduleA.csv", help="Output file name. Default: fec_scheduleA.json")
+    parser.add_argument("-E", "--employer", metavar="", default=None, help="The employer for which data is requested. If not provided, all employers are requested.")
+    parser.add_argument("-o", "--output", metavar="", default=None, help="Output file name. Default: fec_scheduleA_[EMPLOYER_]START_END.json")
     args = parser.parse_args()
 
     if args.api_key == "DEMO_KEY":
@@ -143,6 +201,12 @@ if __name__ == "__main__":
     start = int(args.start)
     end = int(args.end)
 
-    data = fec_scheduleA_year_range(start, end, args.api_key)
+    if args.output is None:
+        if args.employer is not None:
+            output_filename = f"fec_scheduleA_{args.employer}_{start}_{end}.json"
+        else:
+            output_filename = f"fec_scheduleA_{start}_{end}.json"
+
+    data = fec_scheduleA_year_range(start, end, args.api_key, args.employer)
     data.to_csv(args.output)
 
