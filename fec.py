@@ -85,6 +85,10 @@ def download_pages(parameters):
         entries_year += results
 
         pagination = response["pagination"]
+        if pagination["last_indexes"] is None:
+            # This seems to happend but is not documented behaviour. There is no way
+            # of getting the next page, so my assumption is that this is the last page.
+            break
         page += 1
 
         if page % 10 == 0:
