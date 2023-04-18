@@ -57,9 +57,10 @@ def download_scheduleA_year_range(start, end, key = "DEMO_KEY"):
             pagination = response["pagination"]
             page += 1
 
-            checkpoint = {"pagination": pagination, "entries": entries, "page": page}
-            with open(checkpoint_filename, 'w') as checkpoint_file:
-                json.dump(checkpoint, checkpoint_file)
+            if page % 10 == 0:
+                checkpoint = {"pagination": pagination, "entries": entries, "page": page}
+                with open(checkpoint_filename, 'w') as checkpoint_file:
+                    json.dump(checkpoint, checkpoint_file)
 
             print(f"{page} / {pagination['pages']}")
 
