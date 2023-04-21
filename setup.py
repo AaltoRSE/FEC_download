@@ -10,7 +10,7 @@ with open(requirementstxt, "r") as file:
     requirements = [line.strip() for line in file if line.strip()]
 
 setup(
-    name='fec_download',
+    name='FECdownload',
     version=0.1,
     description='Simple script for downloading individual contributions from the OpenFEC API.',
     long_description=long_description,
