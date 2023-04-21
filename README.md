@@ -5,7 +5,7 @@ Simple script for downloading individual contributions from the OpenFEC API.
 ## Installation
 
 ```bash
-pip install pip install git+https://github.com/AaltoRSE/FEC_download/tree/master
+pip install pip install git+https://github.com/AaltoRSE/FEC_download
 ```
 
 ## Usage
