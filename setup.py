@@ -19,7 +19,7 @@ setup(
     author_email='jarno.rantaharju@aalto.fi',
     url='https://github.com/rantahar/fec_download',
     packages=find_packages(where='.'),
-    scripts=['fec_download.py'],
+    scripts=['download_scheduleA.py'],
     python_requires=">=3.6",
     install_requires=requirements,
     classifiers=[
