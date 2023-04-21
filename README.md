@@ -12,7 +12,7 @@ pip install pip install git+https://github.com/AaltoRSE/FEC_download
 
 As a script:
 ```bash
-fec_download.py -k YOUR_API_KEY -s START_YEAR -e END_YEAR
+download_scheduleA.py -k YOUR_API_KEY -s START_YEAR -e END_YEAR
 ```
 
 As a package:
