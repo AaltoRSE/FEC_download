@@ -1,5 +1,5 @@
 import argparse
-from fec_download import fec_scheduleA_year_range
+from FECdownload import fec_scheduleA_year_range
 
 
 def main():
