@@ -30,15 +30,19 @@ def make_request(url, params, max_tries = 20, sleep_time = 1):
         elapsed_time = time.time() - start_time
         rate = (request_count / elapsed_time) * 3600
         if rate > rate_limit:
+            #print(f"waiting for due to rate limit ({rate}/{rate_limit})")
             sleep(3600/1000+1)
         try:
             request_count += 1
+            request_start = time.time()
             response = requests.get(url, params=params)
+            #print(f"actual request took {time.time()- request_start} seconds")
             response.raise_for_status()
             return response
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 429:
                 # rate limit hit. Wait for a moment longer
+                print(f"rate: {rate} {request_count}")
                 sleep(10)
             print(f"HTTP error ({e.response.status_code}): {e.response.reason}")
             if attempt == max_tries - 1:
@@ -101,21 +105,23 @@ def download_pages(parameters):
             break
         page += 1
 
-        if page % 10 == 0:
-            checkpoint_dump(pagination, entries_year, page, year, employer)
+        checkpoint_dump(pagination, entries_year, page, year, employer)
     return entries_year
 
 def download_pages_tqdm(parameters):
     year = parameters["two_year_transaction_period"]
     if "contributor_employer" in parameters:
         employer = parameters["contributor_employer"]
+        message = f"Downloading years {year-2} to {year} for employer {employer}"
     else:
         employer = None
+        message = f"Downloading years {year-2} to {year}"
     page, entries_year, pagination = checkpoint_read(year, employer)
 
-    with tqdm(total=pagination['pages'], desc=f"Downloading years {year-2} to {year}",  miniters=1) as pbar:
-          pbar.update(page)
-          while page < pagination["pages"]:
+
+    with tqdm(total=pagination['pages'], desc=message,  miniters=1) as pbar:
+        pbar.update(page)
+        while page < pagination["pages"]:
             for key, value in pagination["last_indexes"].items():
                 parameters[key] = value
 
@@ -128,8 +134,7 @@ def download_pages_tqdm(parameters):
             pagination = response["pagination"]
             page += 1
 
-            if page % 10 == 0:
-                checkpoint_dump(pagination, entries_year, page, year, employer)
+            checkpoint_dump(pagination, entries_year, page, year, employer)
 
             pbar.total = pagination['pages']
             pbar.update(1)
@@ -167,10 +172,7 @@ def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = N
             parameters["contributor_employer"] = employer
         parameters["two_year_transaction_period"] = year
 
-        if employer is not None:
-            entries += download_pages(parameters)
-        else:
-            entries += download_pages_tqdm(parameters)
+        entries += download_pages_tqdm(parameters)
 
     return entries
     
