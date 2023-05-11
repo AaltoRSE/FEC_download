@@ -36,7 +36,7 @@ def make_request(url, params, max_tries = 20, sleep_time = 1):
             request_count += 1
             request_start = time.time()
             response = requests.get(url, params=params)
-            #print(f"actual request took {time.time()- request_start} seconds")
+            print(f"actual request took {time.time()- request_start} seconds")
             response.raise_for_status()
             return response
         except requests.exceptions.HTTPError as e:
@@ -45,6 +45,7 @@ def make_request(url, params, max_tries = 20, sleep_time = 1):
                 print(f"rate: {rate} {request_count}")
                 sleep(10)
             print(f"HTTP error ({e.response.status_code}): {e.response.reason}")
+            print(e.response.text)
             if attempt == max_tries - 1:
                 raise e
         except requests.exceptions.RequestException as e:
@@ -79,9 +80,9 @@ def checkpoint_read(year, employer):
             return page, entries, pagination
     except:
         pass
-    page = 0
+    page = 1
     entries = []
-    pagination = {"pages": 1, "last_indexes": {}}
+    pagination = {"pages": 2, "last_indexes": {}}
     return page, entries, pagination
 
 def download_pages(parameters):
@@ -113,19 +114,22 @@ def download_pages_tqdm(parameters):
     if "contributor_employer" in parameters:
         employer = parameters["contributor_employer"]
         message = f"Downloading years {year-2} to {year} for employer {employer}"
+        url = api_url+"by_employer/"
     else:
         employer = None
         message = f"Downloading years {year-2} to {year}"
+        url = api_url
     page, entries_year, pagination = checkpoint_read(year, employer)
-
 
     with tqdm(total=pagination['pages'], desc=message,  miniters=1) as pbar:
         pbar.update(page)
         while page < pagination["pages"]:
-            for key, value in pagination["last_indexes"].items():
-                parameters[key] = value
+            if "last_indexes" in pagination:
+                for key, value in pagination["last_indexes"].items():
+                    parameters[key] = value
+            parameters["page"] = page
 
-            response = make_request(api_url, params=parameters)
+            response = make_request(url, params=parameters)
             response = response.json()
             results = response["results"]
 
@@ -158,14 +162,12 @@ def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = N
 
     for year in range(start, end, 2):
         parameters = {
-            "sort_hide_null": "false",
             "per_page": "100",
             "sort_nulls_last": "false",
-            "sort": "-contribution_receipt_date",
+            #"sort": "contribution_receipt_date",
             "page": "1",
-            "sort_null_only": "false",
+            #"sort_null_only": "false",
             "api_key": api_key,
-            "page": 0,
             #"line_number": "F3X-11AI"
         }
         if employer is not None:
