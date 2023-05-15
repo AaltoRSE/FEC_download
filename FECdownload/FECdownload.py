@@ -10,9 +10,9 @@ from tqdm import tqdm
 # API url for schedule A receipts, including contributions from individuals
 api_url = "https://api.open.fec.gov/v1/schedules/schedule_a/"
 
-rate_limit = 1000 # per hour
+rate_limit = 900 # per hour
 start_time = time.time()
-request_count = 0
+request_count = 1
 
 def make_request(url, params, max_tries = 20, sleep_time = 1):
     """Make a request to a URL, checking for HTTP error codes and retrying if the request fails.
@@ -31,19 +31,19 @@ def make_request(url, params, max_tries = 20, sleep_time = 1):
         rate = (request_count / elapsed_time) * 3600
         if rate > rate_limit:
             #print(f"waiting for due to rate limit ({rate}/{rate_limit})")
-            sleep(3600/1000+1)
+            sleep(3600/rate_limit+1)
         try:
             request_count += 1
             request_start = time.time()
             response = requests.get(url, params=params)
-            print(f"actual request took {time.time()- request_start} seconds")
+            #print(f"actual request took {time.time()- request_start} seconds")
             response.raise_for_status()
-            return response
+            return response, time.time() - request_start
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 429:
                 # rate limit hit. Wait for a moment longer
                 print(f"rate: {rate} {request_count}")
-                sleep(10)
+                sleep(5*3600/rate_limit)
             print(f"HTTP error ({e.response.status_code}): {e.response.reason}")
             print(e.response.text)
             if attempt == max_tries - 1:
@@ -55,97 +55,146 @@ def make_request(url, params, max_tries = 20, sleep_time = 1):
         attempt += 1
         sleep(sleep_time)
 
-def checkpoint_filename(year, employer):
+def checkpoint_filename(year, employer, last_name):
     if not os.path.exists("checkpoints"):
         os.makedirs("checkpoints")
+    name = f"checkpoints/fec_download_checkpoint_{year}"
     if employer is not None:
-        return f"checkpoints/fec_download_checkpoint_{year}_{employer}.json"
-    else: 
-        return f"checkpoints/fec_download_checkpoint_{year}.json"
+        name = f"{name}_e_{employer}.json"
+    if last_name is not None:
+        name = f"{name}_n_{last_name}.json"
+    
+    return f"{name}.json"
 
-def checkpoint_dump(pagination, entries, page, year, employer):
-    checkpoint = {"pagination": pagination, "entries": entries, "page": page}
-    with open(checkpoint_filename(year, employer), 'w') as checkpoint_file:
-        json.dump(checkpoint, checkpoint_file)
+def checkpoint_dump(pagination, entries, entry, year, employer, last_name):
+    checkpoint = {"pagination": pagination, "entries": entries, "entry": entry}
+    with open(checkpoint_filename(year, employer, last_name), 'w') as checkpoint_file:
+        json.dump(checkpoint, checkpoint_file, indent=4)
 
-def checkpoint_read(year, employer):
-    filename = checkpoint_filename(year, employer)
+def checkpoint_read(year, employer, last_name):
+    filename = checkpoint_filename(year, employer, last_name)
     try:
         if os.path.exists(filename):
             with open(filename, 'r') as f:
                 checkpoint = json.load(f)
-            page = checkpoint["page"]
+            entry = checkpoint["entry"]
             entries = checkpoint["entries"]
             pagination = checkpoint["pagination"]
-            return page, entries, pagination
+            return entry, entries, pagination
     except:
         pass
-    page = 1
+    entry = 0
     entries = []
-    pagination = {"pages": 2, "last_indexes": {}}
-    return page, entries, pagination
+    pagination = {"count": 1, "last_indexes": {}}
+    return entry, entries, pagination
+
 
 def download_pages(parameters):
     year = parameters["two_year_transaction_period"]
-    employer = parameters["contributor_employer"]
-    page, entries_year, pagination = checkpoint_read(year, employer)
+    employer = None
+    name = None
+    message = f"Downloading years {year-2} to {year}"
+    if "contributor_employer" in parameters:
+        employer = parameters["contributor_employer"]
+        message = f"{message} for employer {employer}"
+    if "contributor_name" in parameters:
+        name = parameters["contributor_name"]
+        message = f"{message} for name {name}"
+    entry, entries_year, pagination = checkpoint_read(year, employer, name)
 
-    while page < pagination["pages"]:
-        for key, value in pagination["last_indexes"].items():
-            parameters[key] = value
+    print(message)
 
-        response = make_request(api_url, params=parameters)
+    if "last_indexes" in pagination and pagination["last_indexes"] is None:
+        return entries_year
+
+    while True:
+        if "last_indexes" in pagination:
+            if pagination["last_indexes"] is None:
+                break
+            for key, value in pagination["last_indexes"].items():
+                parameters[key] = value
+
+        response, timing = make_request(api_url, params=parameters)
         response = response.json()
         results = response["results"]
 
         entries_year += results
 
         pagination = response["pagination"]
-        if pagination["last_indexes"] is None:
-            print(f"Warning: pagination data for {employer} for years {year-2} to {year} is None. Successfully downloaded {len(entries_year)} entries.")
-            break
-        page += 1
+        entry += parameters["per_page"]
 
-        checkpoint_dump(pagination, entries_year, page, year, employer)
+        checkpoint_dump(pagination, entries_year, entry, year, employer, name)
+
+        if len(results) < parameters["per_page"]:
+            print(len(results))
+            break
+
+        if timing > 20 and parameters["per_page"] > 1:
+            parameters["per_page"] //= 2
+        if timing < 2 and parameters["per_page"] <= 90:
+            parameters["per_page"] += 10
+            #print(f"reducing per page to {parameters['per_page']} (timing {timing})")
+
     return entries_year
+
+
 
 def download_pages_tqdm(parameters):
     year = parameters["two_year_transaction_period"]
+    employer = None
+    name = None
+    message = f"Downloading years {year-2} to {year}"
     if "contributor_employer" in parameters:
         employer = parameters["contributor_employer"]
-        message = f"Downloading years {year-2} to {year} for employer {employer}"
-        url = api_url+"by_employer/"
-    else:
-        employer = None
-        message = f"Downloading years {year-2} to {year}"
-        url = api_url
-    page, entries_year, pagination = checkpoint_read(year, employer)
+        message = f"{message} for employer {employer}"
+    if "contributor_name" in parameters:
+        name = parameters["contributor_name"]
+        message = f"{message} for name {name}"
+    entry, entries_year, pagination = checkpoint_read(year, employer, name)
 
-    with tqdm(total=pagination['pages'], desc=message,  miniters=1) as pbar:
-        pbar.update(page)
-        while page < pagination["pages"]:
+    if "last_indexes" in pagination and pagination["last_indexes"] is None:
+        return entries_year
+
+    with tqdm(
+        total=pagination['count'],
+        desc=message,
+        miniters=1
+    ) as pbar:
+        pbar.update(entry)
+        while True:
             if "last_indexes" in pagination:
+                if pagination["last_indexes"] is None:
+                    break
                 for key, value in pagination["last_indexes"].items():
                     parameters[key] = value
-            parameters["page"] = page
 
-            response = make_request(url, params=parameters)
+            response, timing = make_request(api_url, params=parameters)
             response = response.json()
             results = response["results"]
 
             entries_year += results
 
             pagination = response["pagination"]
-            page += 1
+            entry += parameters["per_page"]
 
-            checkpoint_dump(pagination, entries_year, page, year, employer)
+            checkpoint_dump(pagination, entries_year, entry, year, employer, name)
 
-            pbar.total = pagination['pages']
-            pbar.update(1)
+            if len(results) < parameters["per_page"]:
+                break
+
+            if timing > 20 and parameters["per_page"] > 1:
+                parameters["per_page"] //= 2
+            if timing < 2 and parameters["per_page"] <= 90:
+                parameters["per_page"] += 10
+                #print(f"reducing per page to {parameters['per_page']} (timing {timing})")
+
+            pbar.total = pagination['count']
+            pbar.n = entry
+            pbar.update(entry - pbar.n)
     return entries_year
 
 
-def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = None):
+def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = None, name = None):
     """Fetches all Schedule A filings of campaign contributions and loans for the given two-year periods.
 
     Args:
@@ -162,23 +211,22 @@ def download_scheduleA_year_range(start, end, api_key = "DEMO_KEY", employer = N
 
     for year in range(start, end, 2):
         parameters = {
-            "per_page": "100",
+            "per_page": 100,
             "sort_nulls_last": "false",
-            #"sort": "contribution_receipt_date",
-            "page": "1",
-            #"sort_null_only": "false",
+            "page": 1,
             "api_key": api_key,
-            #"line_number": "F3X-11AI"
         }
         if employer is not None:
             parameters["contributor_employer"] = employer
+        if name is not None:
+            parameters["contributor_name"] = name
         parameters["two_year_transaction_period"] = year
 
         entries += download_pages_tqdm(parameters)
 
     return entries
     
-def fec_scheduleA_year_range(start, end, key = "DEMO_KEY", employer=None):
+def fec_scheduleA_year_range(start, end, key = "DEMO_KEY", employer=None, name=None):
     """Returns a panda DataFrame with campaign contributions and loans by cycle.
 
     Args:
@@ -189,7 +237,7 @@ def fec_scheduleA_year_range(start, end, key = "DEMO_KEY", employer=None):
     Returns:
         pandas.DataFrame: A DataFrame of contribution and loan items by cycle.
     """
-    entries = download_scheduleA_year_range(start, end, key, employer)
+    entries = download_scheduleA_year_range(start, end, key, employer, name)
     df = pandas.DataFrame(json_normalize(entries))
     return df
 
